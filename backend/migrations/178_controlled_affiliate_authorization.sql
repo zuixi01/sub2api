@@ -20,12 +20,12 @@ UPDATE user_affiliates
 SET aff_rebate_rate_percent = NULL
 WHERE aff_rebate_rate_percent IS NOT NULL;
 
-INSERT INTO settings (key, value, created_at, updated_at)
+INSERT INTO settings (key, value, updated_at)
 VALUES
-    ('affiliate_rebate_rate', '3', NOW(), NOW()),
-    ('affiliate_rebate_freeze_hours', '168', NOW(), NOW()),
-    ('affiliate_rebate_duration_days', '365', NOW(), NOW()),
-    ('affiliate_admin_recharge_enabled', 'false', NOW(), NOW())
+    ('affiliate_rebate_rate', '3', NOW()),
+    ('affiliate_rebate_freeze_hours', '168', NOW()),
+    ('affiliate_rebate_duration_days', '365', NOW()),
+    ('affiliate_admin_recharge_enabled', 'false', NOW())
 ON CONFLICT (key) DO UPDATE
 SET value = EXCLUDED.value,
     updated_at = NOW();
