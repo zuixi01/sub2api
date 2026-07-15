@@ -4,7 +4,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -135,11 +134,10 @@ func TestAdminService_UpdateUserBalance_AdminRechargeAffiliateRebate(t *testing.
 			amount:    5,
 		},
 		{
-			name:      "enabled add",
+			name:      "enabled add is still excluded",
 			enabled:   true,
 			operation: "add",
 			amount:    0.1,
-			wantCalls: []adminRechargeAffiliateAccrual{{userID: 7, amount: 0.1}},
 		},
 		{
 			name:      "enabled set increase",
@@ -175,11 +173,11 @@ func TestAdminService_UpdateUserBalance_AdminRechargeAffiliateRebate(t *testing.
 	}
 }
 
-func TestAdminService_UpdateUserBalance_AffiliateFailureDoesNotRollbackRecharge(t *testing.T) {
+func TestAdminService_UpdateUserBalance_DoesNotCallAffiliateService(t *testing.T) {
 	baseRepo := &userRepoStub{user: &User{ID: 7, Balance: 10}}
 	repo := &balanceUserRepoStub{userRepoStub: baseRepo}
 	redeemRepo := &balanceRedeemRepoStub{redeemRepoStub: &redeemRepoStub{}}
-	affiliate := &adminRechargeAffiliateAccruerStub{err: errors.New("affiliate unavailable")}
+	affiliate := &adminRechargeAffiliateAccruerStub{}
 	svc := &adminServiceImpl{
 		userRepo:         repo,
 		redeemCodeRepo:   redeemRepo,
@@ -190,6 +188,6 @@ func TestAdminService_UpdateUserBalance_AffiliateFailureDoesNotRollbackRecharge(
 	user, err := svc.UpdateUserBalance(context.Background(), 7, 5, "add", "")
 	require.NoError(t, err)
 	require.Equal(t, 15.0, user.Balance)
-	require.Equal(t, []adminRechargeAffiliateAccrual{{userID: 7, amount: 5}}, affiliate.calls)
+	require.Empty(t, affiliate.calls)
 	require.Len(t, redeemRepo.created, 1)
 }

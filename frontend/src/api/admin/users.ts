@@ -138,8 +138,13 @@ export async function create(userData: {
  * @returns Updated user
  */
 export async function update(id: number, updates: UpdateUserRequest): Promise<AdminUser> {
-  const { data } = await apiClient.put<AdminUser>(`/admin/users/${id}`, updates)
-  return data
+	const { data } = await apiClient.put<AdminUser>(`/admin/users/${id}`, updates)
+	return data
+}
+
+export async function setAffiliateAuthorization(id: number, authorized: boolean): Promise<{ user_id: number, affiliate_authorized: boolean }> {
+	const { data } = await apiClient.put<{ user_id: number, affiliate_authorized: boolean }>(`/admin/affiliates/users/${id}/authorization`, { authorized })
+	return data
 }
 
 /**
@@ -382,6 +387,7 @@ export const usersAPI = {
   getById,
   create,
   update,
+  setAffiliateAuthorization,
   delete: deleteUser,
   updateBalance,
   updateConcurrency,

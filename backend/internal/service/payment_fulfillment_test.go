@@ -53,6 +53,7 @@ type paymentFulfillmentAffiliateRepoStub struct {
 	inviteeSummary *AffiliateSummary
 	inviterSummary *AffiliateSummary
 	accrueCalls    []paymentFulfillmentAffiliateAccrueCall
+	authorized     *bool
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) EnsureUserAffiliate(_ context.Context, userID int64) (*AffiliateSummary, error) {
@@ -106,6 +107,21 @@ func (r *paymentFulfillmentAffiliateRepoStub) TransferQuotaToBalance(context.Con
 
 func (r *paymentFulfillmentAffiliateRepoStub) ListInvitees(context.Context, int64, int) ([]AffiliateInvitee, error) {
 	panic("unexpected ListInvitees call")
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) IsAffiliateAuthorized(context.Context, int64) (bool, error) {
+	if r.authorized == nil {
+		return true, nil
+	}
+	return *r.authorized, nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) IsAffiliateSettlementEligible(context.Context, int64) (bool, error) {
+	return false, nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) SetAffiliateAuthorized(context.Context, int64, int64, bool) error {
+	panic("unexpected SetAffiliateAuthorized call")
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) UpdateUserAffCode(context.Context, int64, string) error {

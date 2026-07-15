@@ -161,6 +161,21 @@ func (s *UserRepoSuite) TestUpdate() {
 	s.Require().Equal("updated", updated.Username)
 }
 
+func (s *UserRepoSuite) TestAffiliateAuthorization() {
+	user := s.mustCreateUser(&service.User{Email: "affiliate-authorization@test.com"})
+
+	created, err := s.repo.GetByID(s.ctx, user.ID)
+	s.Require().NoError(err)
+	s.Require().False(created.AffiliateAuthorized)
+
+	created.AffiliateAuthorized = true
+	s.Require().NoError(s.repo.Update(s.ctx, created))
+
+	reloaded, err := s.repo.GetByID(s.ctx, user.ID)
+	s.Require().NoError(err)
+	s.Require().True(reloaded.AffiliateAuthorized)
+}
+
 func (s *UserRepoSuite) TestUpdateIgnoresNoRowsFromConflictingEmailIdentityUpsert() {
 	user := s.mustCreateUser(&service.User{Email: "update-existing-identity@test.com", Username: "original"})
 

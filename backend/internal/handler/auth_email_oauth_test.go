@@ -411,6 +411,18 @@ func (r *oauthEmailAffiliateRepoStub) ListInvitees(context.Context, int64, int) 
 	panic("unexpected ListInvitees call")
 }
 
+func (r *oauthEmailAffiliateRepoStub) IsAffiliateAuthorized(context.Context, int64) (bool, error) {
+	return true, nil
+}
+
+func (r *oauthEmailAffiliateRepoStub) IsAffiliateSettlementEligible(context.Context, int64) (bool, error) {
+	return false, nil
+}
+
+func (r *oauthEmailAffiliateRepoStub) SetAffiliateAuthorized(context.Context, int64, int64, bool) error {
+	panic("unexpected SetAffiliateAuthorized call")
+}
+
 func (r *oauthEmailAffiliateRepoStub) UpdateUserAffCode(context.Context, int64, string) error {
 	panic("unexpected UpdateUserAffCode call")
 }

@@ -45857,6 +45857,7 @@ type UserMutation struct {
 	concurrency                   *int
 	addconcurrency                *int
 	status                        *string
+	affiliate_authorized          *bool
 	username                      *string
 	notes                         *string
 	totp_secret_encrypted         *string
@@ -46448,6 +46449,42 @@ func (m *UserMutation) OldStatus(ctx context.Context) (v string, err error) {
 // ResetStatus resets all changes to the "status" field.
 func (m *UserMutation) ResetStatus() {
 	m.status = nil
+}
+
+// SetAffiliateAuthorized sets the "affiliate_authorized" field.
+func (m *UserMutation) SetAffiliateAuthorized(b bool) {
+	m.affiliate_authorized = &b
+}
+
+// AffiliateAuthorized returns the value of the "affiliate_authorized" field in the mutation.
+func (m *UserMutation) AffiliateAuthorized() (r bool, exists bool) {
+	v := m.affiliate_authorized
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAffiliateAuthorized returns the old "affiliate_authorized" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldAffiliateAuthorized(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAffiliateAuthorized is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAffiliateAuthorized requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAffiliateAuthorized: %w", err)
+	}
+	return oldValue.AffiliateAuthorized, nil
+}
+
+// ResetAffiliateAuthorized resets all changes to the "affiliate_authorized" field.
+func (m *UserMutation) ResetAffiliateAuthorized() {
+	m.affiliate_authorized = nil
 }
 
 // SetUsername sets the "username" field.
@@ -47816,7 +47853,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 24)
+	fields := make([]string, 0, 25)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -47846,6 +47883,9 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, user.FieldStatus)
+	}
+	if m.affiliate_authorized != nil {
+		fields = append(fields, user.FieldAffiliateAuthorized)
 	}
 	if m.username != nil {
 		fields = append(fields, user.FieldUsername)
@@ -47917,6 +47957,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.Concurrency()
 	case user.FieldStatus:
 		return m.Status()
+	case user.FieldAffiliateAuthorized:
+		return m.AffiliateAuthorized()
 	case user.FieldUsername:
 		return m.Username()
 	case user.FieldNotes:
@@ -47974,6 +48016,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldConcurrency(ctx)
 	case user.FieldStatus:
 		return m.OldStatus(ctx)
+	case user.FieldAffiliateAuthorized:
+		return m.OldAffiliateAuthorized(ctx)
 	case user.FieldUsername:
 		return m.OldUsername(ctx)
 	case user.FieldNotes:
@@ -48080,6 +48124,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStatus(v)
+		return nil
+	case user.FieldAffiliateAuthorized:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAffiliateAuthorized(v)
 		return nil
 	case user.FieldUsername:
 		v, ok := value.(string)
@@ -48371,6 +48422,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldStatus:
 		m.ResetStatus()
+		return nil
+	case user.FieldAffiliateAuthorized:
+		m.ResetAffiliateAuthorized()
 		return nil
 	case user.FieldUsername:
 		m.ResetUsername()

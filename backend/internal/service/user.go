@@ -22,6 +22,7 @@ type User struct {
 	FrozenBalance  float64
 	Concurrency    int
 	Status         string
+	AffiliateAuthorized bool
 	AllowedGroups  []int64
 	TokenVersion   int64 // Incremented on password change to invalidate existing tokens
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
@@ -70,6 +71,11 @@ func (u *User) IsAdmin() bool {
 
 func (u *User) IsActive() bool {
 	return u.Status == StatusActive
+}
+
+// CanPromote reports whether the user may acquire invitees and earn affiliate rebates.
+func (u *User) CanPromote() bool {
+	return u != nil && u.IsActive() && u.AffiliateAuthorized
 }
 
 // CanBindGroup checks whether a user can bind to a given group.
