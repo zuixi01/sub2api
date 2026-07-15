@@ -105,6 +105,11 @@ func Status(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldStatus, v))
 }
 
+// AffiliateAuthorized applies equality check predicate on the "affiliate_authorized" field. It's identical to AffiliateAuthorizedEQ.
+func AffiliateAuthorized(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldAffiliateAuthorized, v))
+}
+
 // Username applies equality check predicate on the "username" field. It's identical to UsernameEQ.
 func Username(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldUsername, v))
@@ -683,6 +688,16 @@ func StatusEqualFold(v string) predicate.User {
 // StatusContainsFold applies the ContainsFold predicate on the "status" field.
 func StatusContainsFold(v string) predicate.User {
 	return predicate.User(sql.FieldContainsFold(FieldStatus, v))
+}
+
+// AffiliateAuthorizedEQ applies the EQ predicate on the "affiliate_authorized" field.
+func AffiliateAuthorizedEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldAffiliateAuthorized, v))
+}
+
+// AffiliateAuthorizedNEQ applies the NEQ predicate on the "affiliate_authorized" field.
+func AffiliateAuthorizedNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldAffiliateAuthorized, v))
 }
 
 // UsernameEQ applies the EQ predicate on the "username" field.

@@ -76,6 +76,114 @@ func (r *affiliateRepository) GetAffiliateByCode(ctx context.Context, code strin
 	return queryAffiliateByCode(ctx, client, code)
 }
 
+func (r *affiliateRepository) IsAffiliateAuthorized(ctx context.Context, userID int64) (bool, error) {
+	if userID <= 0 {
+		return false, nil
+	}
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `
+SELECT affiliate_authorized
+FROM users
+WHERE id = $1
+  AND status = 'active'
+  AND deleted_at IS NULL
+LIMIT 1`, userID)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return false, rows.Err()
+	}
+	var authorized bool
+	if err := rows.Scan(&authorized); err != nil {
+		return false, err
+	}
+	return authorized, rows.Err()
+}
+
+func (r *affiliateRepository) IsAffiliateSettlementEligible(ctx context.Context, userID int64) (bool, error) {
+	if userID <= 0 {
+		return false, nil
+	}
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM user_affiliates ua
+    WHERE ua.user_id = $1
+      AND (
+          ua.aff_quota <> 0
+          OR ua.aff_frozen_quota <> 0
+          OR ua.aff_history_quota <> 0
+          OR EXISTS (
+              SELECT 1
+              FROM user_affiliate_ledger ual
+              WHERE ual.user_id = ua.user_id
+          )
+      )
+)`, userID)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return false, rows.Err()
+	}
+	var eligible bool
+	if err := rows.Scan(&eligible); err != nil {
+		return false, err
+	}
+	return eligible, rows.Err()
+}
+
+func (r *affiliateRepository) SetAffiliateAuthorized(ctx context.Context, actorAdminID, userID int64, authorized bool) error {
+	if actorAdminID <= 0 || userID <= 0 {
+		return service.ErrUserNotFound
+	}
+	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		rows, err := txClient.QueryContext(txCtx, `
+SELECT affiliate_authorized
+FROM users
+WHERE id = $1
+  AND status = 'active'
+  AND deleted_at IS NULL
+FOR UPDATE`, userID)
+		if err != nil {
+			return err
+		}
+		if !rows.Next() {
+			_ = rows.Close()
+			if err := rows.Err(); err != nil {
+				return err
+			}
+			return service.ErrUserNotFound
+		}
+		var current bool
+		if err := rows.Scan(&current); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if current == authorized {
+			return nil
+		}
+		if _, err := txClient.ExecContext(txCtx, `
+UPDATE users
+SET affiliate_authorized = $1,
+    updated_at = NOW()
+WHERE id = $2`, authorized, userID); err != nil {
+			return err
+		}
+		_, err = txClient.ExecContext(txCtx, `
+INSERT INTO affiliate_authorization_audits (user_id, actor_admin_id, authorized)
+VALUES ($1, $2, $3)`, userID, actorAdminID, authorized)
+		return err
+	})
+}
+
 func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID int64) (bool, error) {
 	var bound bool
 	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {

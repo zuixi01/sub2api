@@ -17,6 +17,7 @@ var (
 	ErrAffiliateCodeTaken       = infraerrors.Conflict("AFFILIATE_CODE_TAKEN", "affiliate code already in use")
 	ErrAffiliateAlreadyBound    = infraerrors.Conflict("AFFILIATE_ALREADY_BOUND", "affiliate inviter already bound")
 	ErrAffiliateQuotaEmpty      = infraerrors.BadRequest("AFFILIATE_QUOTA_EMPTY", "no affiliate quota available to transfer")
+	ErrAffiliateNotAuthorized   = infraerrors.Forbidden("AFFILIATE_NOT_AUTHORIZED", "affiliate authorization is required")
 )
 
 const (
@@ -80,6 +81,8 @@ type AffiliateInvitee struct {
 }
 
 type AffiliateDetail struct {
+	Authorized      bool    `json:"authorized"`
+	SettlementOnly  bool    `json:"settlement_only"`
 	UserID          int64   `json:"user_id"`
 	AffCode         string  `json:"aff_code"`
 	InviterID       *int64  `json:"inviter_id,omitempty"`
@@ -103,6 +106,9 @@ type AffiliateRepository interface {
 	ThawFrozenQuota(ctx context.Context, userID int64) (float64, error)
 	TransferQuotaToBalance(ctx context.Context, userID int64) (float64, float64, error)
 	ListInvitees(ctx context.Context, inviterID int64, limit int) ([]AffiliateInvitee, error)
+	IsAffiliateAuthorized(ctx context.Context, userID int64) (bool, error)
+	IsAffiliateSettlementEligible(ctx context.Context, userID int64) (bool, error)
+	SetAffiliateAuthorized(ctx context.Context, actorAdminID, userID int64, authorized bool) error
 
 	// 管理端：用户级专属配置
 	UpdateUserAffCode(ctx context.Context, userID int64, newCode string) error
@@ -239,6 +245,10 @@ func (s *AffiliateService) EnsureUserAffiliate(ctx context.Context, userID int64
 }
 
 func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64) (*AffiliateDetail, error) {
+	authorized, settlementOnly, err := s.GetAffiliateAccess(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	// Lazy thaw: move any matured frozen quota to available before reading.
 	if s != nil && s.repo != nil {
 		// best-effort: thaw failure is non-fatal
@@ -249,11 +259,27 @@ func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64)
 	if err != nil {
 		return nil, err
 	}
+	if settlementOnly {
+		return &AffiliateDetail{
+			Authorized:                 false,
+			SettlementOnly:             true,
+			UserID:                     summary.UserID,
+			InviterID:                  summary.InviterID,
+			AffCount:                   summary.AffCount,
+			AffQuota:                   summary.AffQuota,
+			AffFrozenQuota:             summary.AffFrozenQuota,
+			AffHistoryQuota:            summary.AffHistoryQuota,
+			EffectiveRebateRatePercent: s.globalRebateRatePercent(ctx),
+			Invitees:                   []AffiliateInvitee{},
+		}, nil
+	}
 	invitees, err := s.listInvitees(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	return &AffiliateDetail{
+		Authorized:                 authorized,
+		SettlementOnly:             false,
 		UserID:                     summary.UserID,
 		AffCode:                    summary.AffCode,
 		InviterID:                  summary.InviterID,
@@ -264,6 +290,31 @@ func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64)
 		EffectiveRebateRatePercent: s.resolveRebateRatePercent(ctx, summary),
 		Invitees:                   invitees,
 	}, nil
+}
+
+// GetAffiliateAccess distinguishes promotion access from settlement-only access.
+func (s *AffiliateService) GetAffiliateAccess(ctx context.Context, userID int64) (authorized bool, settlementOnly bool, err error) {
+	if userID <= 0 {
+		return false, false, ErrAffiliateNotAuthorized
+	}
+	if s == nil || s.repo == nil {
+		return false, false, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+	}
+	authorized, err = s.repo.IsAffiliateAuthorized(ctx, userID)
+	if err != nil {
+		return false, false, err
+	}
+	if authorized {
+		return true, false, nil
+	}
+	settlementOnly, err = s.repo.IsAffiliateSettlementEligible(ctx, userID)
+	if err != nil {
+		return false, false, err
+	}
+	if !settlementOnly {
+		return false, false, ErrAffiliateNotAuthorized
+	}
+	return false, true, nil
 }
 
 func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, rawCode string) error {
@@ -298,6 +349,13 @@ func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, 
 		return err
 	}
 	if inviterSummary == nil || inviterSummary.UserID <= 0 || inviterSummary.UserID == userID {
+		return ErrAffiliateCodeInvalid
+	}
+	authorized, err := s.repo.IsAffiliateAuthorized(ctx, inviterSummary.UserID)
+	if err != nil {
+		return err
+	}
+	if !authorized {
 		return ErrAffiliateCodeInvalid
 	}
 
@@ -339,6 +397,13 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 	inviterSummary, err := s.repo.EnsureUserAffiliate(ctx, *inviteeSummary.InviterID)
 	if err != nil {
 		return 0, err
+	}
+	authorized, err := s.repo.IsAffiliateAuthorized(ctx, inviterSummary.UserID)
+	if err != nil {
+		return 0, err
+	}
+	if !authorized {
+		return 0, nil
 	}
 	// 有效期检查：超过返利有效期后不再产生返利
 	if s.settingService != nil {
@@ -386,16 +451,9 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 	return rebate, nil
 }
 
-// resolveRebateRatePercent returns the inviter's exclusive rate when set,
-// otherwise the global setting value (clamped to [Min, Max]).
-func (s *AffiliateService) resolveRebateRatePercent(ctx context.Context, inviter *AffiliateSummary) float64 {
-	if inviter != nil && inviter.AffRebateRatePercent != nil {
-		v := *inviter.AffRebateRatePercent
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return s.globalRebateRatePercent(ctx)
-		}
-		return clampAffiliateRebateRate(v)
-	}
+// resolveRebateRatePercent keeps the legacy signature while enforcing the
+// controlled-affiliate rule that every inviter uses the same global rate.
+func (s *AffiliateService) resolveRebateRatePercent(ctx context.Context, _ *AffiliateSummary) float64 {
 	return s.globalRebateRatePercent(ctx)
 }
 
@@ -412,6 +470,9 @@ func (s *AffiliateService) TransferAffiliateQuota(ctx context.Context, userID in
 	if s == nil || s.repo == nil {
 		return 0, 0, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
 	}
+	if _, _, err := s.GetAffiliateAccess(ctx, userID); err != nil {
+		return 0, 0, err
+	}
 
 	transferred, balance, err := s.repo.TransferQuotaToBalance(ctx, userID)
 	if err != nil {
@@ -421,6 +482,17 @@ func (s *AffiliateService) TransferAffiliateQuota(ctx context.Context, userID in
 		s.invalidateAffiliateCaches(ctx, userID)
 	}
 	return transferred, balance, nil
+}
+
+// AdminSetAffiliateAuthorization grants or revokes promotion capability.
+func (s *AffiliateService) AdminSetAffiliateAuthorization(ctx context.Context, actorAdminID, userID int64, authorized bool) error {
+	if s == nil || s.repo == nil {
+		return infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+	}
+	if actorAdminID <= 0 || userID <= 0 {
+		return infraerrors.BadRequest("INVALID_USER", "invalid user")
+	}
+	return s.repo.SetAffiliateAuthorized(ctx, actorAdminID, userID, authorized)
 }
 
 func (s *AffiliateService) listInvitees(ctx context.Context, inviterID int64) ([]AffiliateInvitee, error) {

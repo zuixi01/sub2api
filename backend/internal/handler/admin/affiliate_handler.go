@@ -20,6 +20,37 @@ type AffiliateHandler struct {
 	adminService     service.AdminService
 }
 
+type SetAffiliateAuthorizationRequest struct {
+	Authorized bool `json:"authorized"`
+}
+
+// SetUserAuthorization grants or revokes a user's controlled-affiliate
+// promotion capability. The current authenticated admin is recorded in the
+// authorization audit trail by the service repository.
+// PUT /api/v1/admin/affiliates/users/:user_id/authorization
+func (h *AffiliateHandler) SetUserAuthorization(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user_id")
+		return
+	}
+	actorAdminID := getAdminIDFromContext(c)
+	if actorAdminID <= 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	var req SetAffiliateAuthorizationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.affiliateService.AdminSetAffiliateAuthorization(c.Request.Context(), actorAdminID, userID, req.Authorized); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"user_id": userID, "affiliate_authorized": req.Authorized})
+}
+
 // NewAffiliateHandler creates a new admin affiliate handler.
 func NewAffiliateHandler(affiliateService *service.AffiliateService, adminService service.AdminService) *AffiliateHandler {
 	return &AffiliateHandler{
