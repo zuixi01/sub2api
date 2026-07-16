@@ -654,6 +654,10 @@ func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
 	}
 }
 
+func TestEmbeddedFrontendBypassesAffiliateLandingRoutes(t *testing.T) {
+	assert.True(t, shouldBypassEmbeddedFrontend("/r/INVITER"))
+}
+
 func TestNewFrontendServer(t *testing.T) {
 	t.Run("creates_server_successfully", func(t *testing.T) {
 		provider := &mockSettingsProvider{
