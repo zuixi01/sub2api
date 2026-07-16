@@ -423,6 +423,14 @@ func (r *oauthEmailAffiliateRepoStub) SetAffiliateAuthorized(context.Context, in
 	panic("unexpected SetAffiliateAuthorized call")
 }
 
+func (r *oauthEmailAffiliateRepoStub) RecordAffiliateVisit(context.Context, service.AffiliateVisitInput) (bool, error) {
+	panic("unexpected RecordAffiliateVisit call")
+}
+
+func (r *oauthEmailAffiliateRepoStub) GetAffiliateGrowthMetrics(context.Context, int64) (service.AffiliateGrowthMetrics, error) {
+	panic("unexpected GetAffiliateGrowthMetrics call")
+}
+
 func (r *oauthEmailAffiliateRepoStub) UpdateUserAffCode(context.Context, int64, string) error {
 	panic("unexpected UpdateUserAffCode call")
 }

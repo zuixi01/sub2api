@@ -93,8 +93,30 @@ type AffiliateDetail struct {
 	// EffectiveRebateRatePercent 是当前用户作为邀请人时实际生效的返利比例：
 	// 优先用户自己的专属比例（aff_rebate_rate_percent），否则回退到全局比例。
 	// 用于在用户的 /affiliate 页面直观展示「分享后能拿到多少」。
-	EffectiveRebateRatePercent float64            `json:"effective_rebate_rate_percent"`
-	Invitees                   []AffiliateInvitee `json:"invitees"`
+	EffectiveRebateRatePercent float64                `json:"effective_rebate_rate_percent"`
+	Invitees                   []AffiliateInvitee     `json:"invitees"`
+	Growth                     AffiliateGrowthMetrics `json:"growth"`
+}
+
+// AffiliateGrowthMetrics is the single, user-facing funnel definition. Visits
+// are privacy-safe daily deduplicated landing hits; recharge and rebate values
+// are derived from the immutable affiliate ledger.
+type AffiliateGrowthMetrics struct {
+	Visits         int64   `json:"visits"`
+	Registrations  int64   `json:"registrations"`
+	PayingInvitees int64   `json:"paying_invitees"`
+	RechargeAmount float64 `json:"recharge_amount"`
+	RebateAmount   float64 `json:"rebate_amount"`
+}
+
+type AffiliateVisitInput struct {
+	AffiliateUserID int64
+	AffCode         string
+	VisitedOn       time.Time
+	VisitorHash     string
+	UTMSource       string
+	UTMMedium       string
+	UTMCampaign     string
 }
 
 type AffiliateRepository interface {
@@ -109,6 +131,8 @@ type AffiliateRepository interface {
 	IsAffiliateAuthorized(ctx context.Context, userID int64) (bool, error)
 	IsAffiliateSettlementEligible(ctx context.Context, userID int64) (bool, error)
 	SetAffiliateAuthorized(ctx context.Context, actorAdminID, userID int64, authorized bool) error
+	RecordAffiliateVisit(ctx context.Context, input AffiliateVisitInput) (bool, error)
+	GetAffiliateGrowthMetrics(ctx context.Context, affiliateUserID int64) (AffiliateGrowthMetrics, error)
 
 	// 管理端：用户级专属配置
 	UpdateUserAffCode(ctx context.Context, userID int64, newCode string) error
@@ -120,6 +144,32 @@ type AffiliateRepository interface {
 	ListAffiliateRebateRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error)
 	ListAffiliateTransferRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error)
 	GetAffiliateUserOverview(ctx context.Context, userID int64) (*AffiliateUserOverview, error)
+}
+
+func (s *AffiliateService) RecordAffiliateVisit(ctx context.Context, input AffiliateVisitInput) (bool, error) {
+	if s == nil || s.repo == nil || !s.IsEnabled(ctx) {
+		return false, ErrAffiliateCodeInvalid
+	}
+	input.AffCode = strings.ToUpper(strings.TrimSpace(input.AffCode))
+	if !isValidAffiliateCodeFormat(input.AffCode) || len(input.VisitorHash) != 64 {
+		return false, ErrAffiliateCodeInvalid
+	}
+	affiliate, err := s.repo.GetAffiliateByCode(ctx, input.AffCode)
+	if err != nil || affiliate == nil || affiliate.UserID <= 0 {
+		return false, ErrAffiliateCodeInvalid
+	}
+	authorized, err := s.repo.IsAffiliateAuthorized(ctx, affiliate.UserID)
+	if err != nil {
+		return false, err
+	}
+	if !authorized {
+		return false, ErrAffiliateCodeInvalid
+	}
+	input.AffiliateUserID = affiliate.UserID
+	if input.VisitedOn.IsZero() {
+		input.VisitedOn = time.Now().UTC()
+	}
+	return s.repo.RecordAffiliateVisit(ctx, input)
 }
 
 // AffiliateAdminFilter 列表筛选条件
@@ -271,9 +321,14 @@ func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64)
 			AffHistoryQuota:            summary.AffHistoryQuota,
 			EffectiveRebateRatePercent: s.globalRebateRatePercent(ctx),
 			Invitees:                   []AffiliateInvitee{},
+			Growth:                     AffiliateGrowthMetrics{},
 		}, nil
 	}
 	invitees, err := s.listInvitees(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	growth, err := s.repo.GetAffiliateGrowthMetrics(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -289,6 +344,7 @@ func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64)
 		AffHistoryQuota:            summary.AffHistoryQuota,
 		EffectiveRebateRatePercent: s.resolveRebateRatePercent(ctx, summary),
 		Invitees:                   invitees,
+		Growth:                     growth,
 	}, nil
 }
 

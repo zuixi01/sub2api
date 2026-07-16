@@ -76,6 +76,56 @@ func (r *affiliateRepository) GetAffiliateByCode(ctx context.Context, code strin
 	return queryAffiliateByCode(ctx, client, code)
 }
 
+func (r *affiliateRepository) RecordAffiliateVisit(ctx context.Context, input service.AffiliateVisitInput) (bool, error) {
+	client := clientFromContext(ctx, r.client)
+	result, err := client.ExecContext(ctx, `
+INSERT INTO affiliate_visit_events (affiliate_user_id, aff_code, visited_on, visitor_hash, utm_source, utm_medium, utm_campaign)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (affiliate_user_id, visited_on, visitor_hash) DO NOTHING`,
+		input.AffiliateUserID, input.AffCode, input.VisitedOn.UTC().Truncate(24*time.Hour), input.VisitorHash,
+		input.UTMSource, input.UTMMedium, input.UTMCampaign)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
+}
+
+func (r *affiliateRepository) GetAffiliateGrowthMetrics(ctx context.Context, affiliateUserID int64) (service.AffiliateGrowthMetrics, error) {
+	client := clientFromContext(ctx, r.client)
+	var metrics service.AffiliateGrowthMetrics
+	rows, err := client.QueryContext(ctx, `
+SELECT
+  (SELECT COUNT(*) FROM affiliate_visit_events WHERE affiliate_user_id = $1),
+  (SELECT COUNT(*) FROM user_affiliates WHERE inviter_id = $1),
+  (SELECT COUNT(DISTINCT source_user_id) FROM user_affiliate_ledger WHERE user_id = $1 AND action = 'accrue'),
+  COALESCE((SELECT SUM(po.pay_amount)::double precision
+    FROM user_affiliate_ledger ual
+    JOIN payment_orders po ON po.id = ual.source_order_id
+    WHERE ual.user_id = $1 AND ual.action = 'accrue'), 0),
+  COALESCE((SELECT SUM(amount)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND action = 'accrue'), 0)`,
+		affiliateUserID,
+	)
+	if err != nil {
+		return metrics, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return metrics, rows.Err()
+	}
+	err = rows.Scan(
+		&metrics.Visits,
+		&metrics.Registrations,
+		&metrics.PayingInvitees,
+		&metrics.RechargeAmount,
+		&metrics.RebateAmount,
+	)
+	if err != nil {
+		return metrics, err
+	}
+	return metrics, rows.Err()
+}
+
 func (r *affiliateRepository) IsAffiliateAuthorized(ctx context.Context, userID int64) (bool, error) {
 	if userID <= 0 {
 		return false, nil

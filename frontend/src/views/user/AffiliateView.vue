@@ -84,6 +84,35 @@
         </div>
 
         <div v-if="detail.authorized" class="card p-6">
+          <div>
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">渠道漏斗</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">访问、注册、付费和返利均按同一渠道归因口径统计。</p>
+          </div>
+          <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
+              <p class="text-xs text-gray-500 dark:text-dark-400">落地页访问</p>
+              <p class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ formatCount(detail.growth.visits) }}</p>
+            </div>
+            <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
+              <p class="text-xs text-gray-500 dark:text-dark-400">成功注册</p>
+              <p class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ formatCount(detail.growth.registrations) }}</p>
+            </div>
+            <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
+              <p class="text-xs text-gray-500 dark:text-dark-400">完成付费</p>
+              <p class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ formatCount(detail.growth.paying_invitees) }}</p>
+            </div>
+            <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
+              <p class="text-xs text-gray-500 dark:text-dark-400">归因充值</p>
+              <p class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ formatCurrency(detail.growth.recharge_amount) }}</p>
+            </div>
+            <div class="rounded-xl bg-primary-50 p-4 dark:bg-primary-900/20">
+              <p class="text-xs text-primary-700 dark:text-primary-300">累计返利</p>
+              <p class="mt-1 text-xl font-semibold text-primary-700 dark:text-primary-300">{{ formatCurrency(detail.growth.rebate_amount) }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="detail.authorized" class="card p-6">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('affiliate.transfer.title') }}</h3>
@@ -163,8 +192,8 @@ const detail = ref<UserAffiliateDetail | null>(null)
 
 const inviteLink = computed(() => {
   if (!detail.value) return ''
-  if (typeof window === 'undefined') return `/register?aff=${encodeURIComponent(detail.value.aff_code)}`
-  return `${window.location.origin}/register?aff=${encodeURIComponent(detail.value.aff_code)}`
+  if (typeof window === 'undefined') return `/r/${encodeURIComponent(detail.value.aff_code)}`
+  return `${window.location.origin}/r/${encodeURIComponent(detail.value.aff_code)}`
 })
 
 // Rebate rate is a percentage in the range [0, 100]; backend already clamps it.

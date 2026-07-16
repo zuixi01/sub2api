@@ -136,6 +136,14 @@ export interface AffiliateInvitee {
   total_rebate: number
 }
 
+export interface AffiliateGrowthMetrics {
+  visits: number
+  registrations: number
+  paying_invitees: number
+  recharge_amount: number
+  rebate_amount: number
+}
+
 export interface UserAffiliateDetail {
 	 authorized: boolean
 	 settlement_only: boolean
@@ -149,6 +157,7 @@ export interface UserAffiliateDetail {
   /** 当前用户作为邀请人时实际生效的返利比例（专属覆盖全局）。0-100。 */
   effective_rebate_rate_percent: number
   invitees: AffiliateInvitee[]
+  growth: AffiliateGrowthMetrics
 }
 
 export interface AffiliateTransferResponse {

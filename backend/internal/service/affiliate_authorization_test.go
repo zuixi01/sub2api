@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -15,6 +16,7 @@ type affiliateAuthorizationRepoStub struct {
 	bindCalls      int
 	accrueCalls    int
 	setCalls       int
+	visitCalls     int
 }
 
 func (r *affiliateAuthorizationRepoStub) EnsureUserAffiliate(_ context.Context, userID int64) (*AffiliateSummary, error) {
@@ -59,6 +61,15 @@ func (r *affiliateAuthorizationRepoStub) SetAffiliateAuthorized(_ context.Contex
 	r.authorized[userID] = authorized
 	r.setCalls++
 	return nil
+}
+
+func (r *affiliateAuthorizationRepoStub) RecordAffiliateVisit(context.Context, AffiliateVisitInput) (bool, error) {
+	r.visitCalls++
+	return true, nil
+}
+
+func (r *affiliateAuthorizationRepoStub) GetAffiliateGrowthMetrics(context.Context, int64) (AffiliateGrowthMetrics, error) {
+	return AffiliateGrowthMetrics{}, nil
 }
 
 type affiliateAuthorizationSettingRepoStub struct {
@@ -134,5 +145,32 @@ func TestAdminSetAffiliateAuthorization(t *testing.T) {
 	}
 	if !repo.authorized[42] || repo.setCalls != 1 {
 		t.Fatal("authorization must be delegated to the repository")
+	}
+}
+
+func TestRecordAffiliateVisitRequiresAuthorizedAffiliate(t *testing.T) {
+	ctx := context.Background()
+	affiliateID := int64(101)
+	repo := &affiliateAuthorizationRepoStub{
+		authorized: map[int64]bool{affiliateID: false},
+		profilesByCode: map[string]*AffiliateSummary{
+			"INVITER": {UserID: affiliateID, AffCode: "INVITER", CreatedAt: time.Now()},
+		},
+	}
+	svc := newAffiliateAuthorizationService(repo)
+	input := AffiliateVisitInput{AffCode: "INVITER", VisitedOn: time.Now(), VisitorHash: "a" + strings.Repeat("1", 63)}
+
+	recorded, err := svc.RecordAffiliateVisit(ctx, input)
+	if !errors.Is(err, ErrAffiliateCodeInvalid) {
+		t.Fatalf("unauthorized affiliate must reject visit, got %v", err)
+	}
+	if recorded || repo.visitCalls != 0 {
+		t.Fatal("unauthorized affiliate must not record a visit")
+	}
+
+	repo.authorized[affiliateID] = true
+	recorded, err = svc.RecordAffiliateVisit(ctx, input)
+	if err != nil || !recorded || repo.visitCalls != 1 {
+		t.Fatalf("authorized affiliate visit must be recorded, recorded=%v err=%v calls=%d", recorded, err, repo.visitCalls)
 	}
 }

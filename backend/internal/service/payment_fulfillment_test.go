@@ -124,6 +124,14 @@ func (r *paymentFulfillmentAffiliateRepoStub) SetAffiliateAuthorized(context.Con
 	panic("unexpected SetAffiliateAuthorized call")
 }
 
+func (r *paymentFulfillmentAffiliateRepoStub) RecordAffiliateVisit(context.Context, AffiliateVisitInput) (bool, error) {
+	panic("unexpected RecordAffiliateVisit call")
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) GetAffiliateGrowthMetrics(context.Context, int64) (AffiliateGrowthMetrics, error) {
+	panic("unexpected GetAffiliateGrowthMetrics call")
+}
+
 func (r *paymentFulfillmentAffiliateRepoStub) UpdateUserAffCode(context.Context, int64, string) error {
 	panic("unexpected UpdateUserAffCode call")
 }
