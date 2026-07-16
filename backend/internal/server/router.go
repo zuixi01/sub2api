@@ -61,6 +61,7 @@ func SetupRouter(
 		return nil
 	}))
 	r.Use(middleware2.ServerTiming(cfg.Server.EnableServerTiming))
+	r.Use(handler.AffiliateAttributionMiddleware(cfg.JWT.Secret))
 
 	// Serve embedded frontend with settings injection if available
 	if web.HasEmbeddedFrontend() {
@@ -102,7 +103,7 @@ func registerRoutes(
 	redisClient *redis.Client,
 ) {
 	// 通用路由（健康检查、状态等）
-	routes.RegisterCommonRoutes(r, h.AffiliateLanding)
+	routes.RegisterCommonRoutes(r, h.AffiliateLanding, redisClient)
 
 	// API v1
 	v1 := r.Group("/api/v1")

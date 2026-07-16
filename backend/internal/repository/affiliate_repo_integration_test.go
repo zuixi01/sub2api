@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +38,48 @@ func querySingleInt(t *testing.T, ctx context.Context, client *dbent.Client, que
 	require.NoError(t, rows.Scan(&value))
 	require.NoError(t, rows.Err())
 	return value
+}
+
+func TestAffiliateRepository_BindInviterLinksVerifiedVisit(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-attribution-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash", Role: service.RoleUser, Status: service.StatusActive, Concurrency: 5,
+	})
+	invitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-attribution-invitee-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash", Role: service.RoleUser, Status: service.StatusActive, Concurrency: 5,
+	})
+
+	_, err := client.ExecContext(txCtx, `
+INSERT INTO user_affiliates (user_id, aff_code) VALUES ($1, 'ATTRINVITER'), ($2, 'ATTRINVITEE')`, inviter.ID, invitee.ID)
+	require.NoError(t, err)
+	rows, err := client.QueryContext(txCtx, `
+INSERT INTO affiliate_visit_events (affiliate_user_id, aff_code, visited_on, visitor_hash)
+VALUES ($1, 'ATTRINVITER', CURRENT_DATE, $2) RETURNING id`, inviter.ID, strings.Repeat("a", 64))
+	require.NoError(t, err)
+	require.True(t, rows.Next())
+	var visitID int64
+	require.NoError(t, rows.Scan(&visitID))
+	require.NoError(t, rows.Close())
+
+	attributedCtx := service.WithAffiliateAttribution(txCtx, visitID, "ATTRINVITER")
+	bound, err := repo.BindInviter(attributedCtx, invitee.ID, inviter.ID)
+	require.NoError(t, err)
+	require.True(t, bound)
+
+	rows, err = client.QueryContext(txCtx, "SELECT registered_user_id FROM affiliate_visit_events WHERE id = $1", visitID)
+	require.NoError(t, err)
+	require.True(t, rows.Next())
+	var registeredUserID int64
+	require.NoError(t, rows.Scan(&registeredUserID))
+	require.NoError(t, rows.Close())
+	require.Equal(t, invitee.ID, registeredUserID)
 }
 
 func TestAffiliateRepository_TransferQuotaToBalance_UsesClaimedQuotaBeforeClear(t *testing.T) {

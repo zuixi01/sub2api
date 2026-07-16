@@ -131,7 +131,7 @@ type AffiliateRepository interface {
 	IsAffiliateAuthorized(ctx context.Context, userID int64) (bool, error)
 	IsAffiliateSettlementEligible(ctx context.Context, userID int64) (bool, error)
 	SetAffiliateAuthorized(ctx context.Context, actorAdminID, userID int64, authorized bool) error
-	RecordAffiliateVisit(ctx context.Context, input AffiliateVisitInput) (bool, error)
+	RecordAffiliateVisit(ctx context.Context, input AffiliateVisitInput) (int64, bool, error)
 	GetAffiliateGrowthMetrics(ctx context.Context, affiliateUserID int64) (AffiliateGrowthMetrics, error)
 
 	// 管理端：用户级专属配置
@@ -146,24 +146,24 @@ type AffiliateRepository interface {
 	GetAffiliateUserOverview(ctx context.Context, userID int64) (*AffiliateUserOverview, error)
 }
 
-func (s *AffiliateService) RecordAffiliateVisit(ctx context.Context, input AffiliateVisitInput) (bool, error) {
+func (s *AffiliateService) RecordAffiliateVisit(ctx context.Context, input AffiliateVisitInput) (int64, bool, error) {
 	if s == nil || s.repo == nil || !s.IsEnabled(ctx) {
-		return false, ErrAffiliateCodeInvalid
+		return 0, false, ErrAffiliateCodeInvalid
 	}
 	input.AffCode = strings.ToUpper(strings.TrimSpace(input.AffCode))
 	if !isValidAffiliateCodeFormat(input.AffCode) || len(input.VisitorHash) != 64 {
-		return false, ErrAffiliateCodeInvalid
+		return 0, false, ErrAffiliateCodeInvalid
 	}
 	affiliate, err := s.repo.GetAffiliateByCode(ctx, input.AffCode)
 	if err != nil || affiliate == nil || affiliate.UserID <= 0 {
-		return false, ErrAffiliateCodeInvalid
+		return 0, false, ErrAffiliateCodeInvalid
 	}
 	authorized, err := s.repo.IsAffiliateAuthorized(ctx, affiliate.UserID)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	if !authorized {
-		return false, ErrAffiliateCodeInvalid
+		return 0, false, ErrAffiliateCodeInvalid
 	}
 	input.AffiliateUserID = affiliate.UserID
 	if input.VisitedOn.IsZero() {

@@ -29,6 +29,9 @@ server:
   frontend_url: ""
   # Trusted proxies for X-Forwarded-For parsing (CIDR/IP). Empty disables trusted proxies.
   # 信任的代理地址（CIDR/IP 格式），用于解析 X-Forwarded-For 头。留空则禁用代理信任。
+  # 安全默认值为空：未配置时不会信任客户端伪造的转发请求头。
+  # Cloudflare -> Nginx -> Sub2API 场景只填写 Nginx 到 Sub2API 的实际源地址，
+  # 例如固定 Docker 网络中的 Nginx 地址：172.20.0.10/32。
   trusted_proxies: []
   # Global max request body size in bytes (default: 256MB)
   # 全局最大请求体大小（字节，默认 256MB）

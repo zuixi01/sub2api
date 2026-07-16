@@ -151,6 +151,29 @@ When using Docker Compose with `AUTO_SETUP=true`:
 - `schema_migrations` tracks applied migrations (filename + checksum).
 - Migrations are forward-only; rollback requires a DB backup restore or a manual compensating SQL script.
 
+### Cloudflare + Nginx 可信客户端 IP
+
+分销入口的防刷限流只使用 Gin 可信代理链解析出的客户端 IP。推荐链路为 `Cloudflare -> Nginx -> Sub2API`：
+
+1. Nginx 仅接受 Cloudflare 官方公布网段传入的 `CF-Connecting-IP`，并用 `real_ip` 模块还原客户端地址。Cloudflare 网段会更新，应由运维流程从 Cloudflare 官方来源同步，不要在应用仓库中长期硬编码。
+2. Nginx 转发时覆盖而不是追加客户端可控请求头：
+
+```nginx
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+3. 在 Sub2API `config.yaml` 中仅信任 Nginx 到应用的实际源 IP。下面地址只是固定 Docker 网络示例：
+
+```yaml
+server:
+  trusted_proxies:
+    - "172.20.0.10/32"
+```
+
+不要配置 `0.0.0.0/0` 或直接信任所有 Docker 私网段。若 Nginx 与 Sub2API 位于同一主机，可通过固定容器地址或仅监听回环地址来缩小信任边界。配置为空时，Sub2API 会忽略 `X-Forwarded-For`、`X-Real-IP` 和 `CF-Connecting-IP` 对安全限流的影响。
+
 **Verify `users.allowed_groups` → `user_allowed_groups` backfill**
 
 During the incremental GORM→Ent migration, `users.allowed_groups` (legacy `BIGINT[]`) is being replaced by a normalized join table `user_allowed_groups(user_id, group_id)`.

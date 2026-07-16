@@ -2,10 +2,13 @@ package middleware
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +26,7 @@ const (
 // RateLimitOptions 限流可选配置
 type RateLimitOptions struct {
 	FailureMode RateLimitFailureMode
+	KeyFunc     func(*gin.Context) string
 }
 
 var rateLimitScript = redis.NewScript(`
@@ -88,8 +92,21 @@ func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Durati
 	}
 
 	return func(c *gin.Context) {
-		ip := c.ClientIP()
-		redisKey := r.prefix + key + ":" + ip
+		identity := c.ClientIP()
+		if opts.KeyFunc != nil {
+			identity = opts.KeyFunc(c)
+		}
+		identity = strings.TrimSpace(identity)
+		if identity == "" {
+			if failureMode == RateLimitFailClose {
+				abortRateLimit(c)
+				return
+			}
+			c.Next()
+			return
+		}
+		digest := sha256.Sum256([]byte(identity))
+		redisKey := r.prefix + key + ":" + hex.EncodeToString(digest[:])
 
 		ctx := c.Request.Context()
 
@@ -113,6 +130,7 @@ func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Durati
 
 		// 超过限制
 		if count > int64(limit) {
+			log.Printf("[RateLimit] exceeded: key=%s count=%d limit=%d", redisKey, count, limit)
 			abortRateLimit(c)
 			return
 		}

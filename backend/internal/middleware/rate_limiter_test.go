@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,61 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRateLimiterCustomKeyIsHashedAndIsolated(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	seen := make([]string, 0, 2)
+	originalRun := rateLimitRun
+	rateLimitRun = func(_ context.Context, _ *redis.Client, key string, _ int64) (int64, bool, error) {
+		seen = append(seen, key)
+		return 1, false, nil
+	}
+	t.Cleanup(func() { rateLimitRun = originalRun })
+
+	limiter := NewRateLimiter(redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}))
+	router := gin.New()
+	router.GET("/r/:code", limiter.LimitWithOptions("affiliate-code", 10, time.Minute, RateLimitOptions{
+		FailureMode: RateLimitFailClose,
+		KeyFunc: func(c *gin.Context) string {
+			return strings.ToUpper(c.Param("code"))
+		},
+	}), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	for _, path := range []string{"/r/first", "/r/second"} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusNoContent, recorder.Code)
+	}
+	require.Len(t, seen, 2)
+	require.NotEqual(t, seen[0], seen[1])
+	require.NotContains(t, seen[0], "FIRST")
+	require.Regexp(t, `^rate_limit:affiliate-code:[a-f0-9]{64}$`, seen[0])
+}
+
+func TestRateLimiterCustomKeyRejectsEmptyKeyInFailCloseMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalRun := rateLimitRun
+	called := false
+	rateLimitRun = func(context.Context, *redis.Client, string, int64) (int64, bool, error) {
+		called = true
+		return 1, false, nil
+	}
+	t.Cleanup(func() { rateLimitRun = originalRun })
+
+	limiter := NewRateLimiter(redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}))
+	router := gin.New()
+	router.Use(limiter.LimitWithOptions("affiliate", 10, time.Minute, RateLimitOptions{
+		FailureMode: RateLimitFailClose,
+		KeyFunc:     func(*gin.Context) string { return " " },
+	}))
+	router.GET("/", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	require.False(t, called)
+}
 
 func TestWindowTTLMillis(t *testing.T) {
 	require.Equal(t, int64(1), windowTTLMillis(500*time.Microsecond))

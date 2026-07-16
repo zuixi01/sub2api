@@ -423,7 +423,7 @@ func (r *oauthEmailAffiliateRepoStub) SetAffiliateAuthorized(context.Context, in
 	panic("unexpected SetAffiliateAuthorized call")
 }
 
-func (r *oauthEmailAffiliateRepoStub) RecordAffiliateVisit(context.Context, service.AffiliateVisitInput) (bool, error) {
+func (r *oauthEmailAffiliateRepoStub) RecordAffiliateVisit(context.Context, service.AffiliateVisitInput) (int64, bool, error) {
 	panic("unexpected RecordAffiliateVisit call")
 }
 

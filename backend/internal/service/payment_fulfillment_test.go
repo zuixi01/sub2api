@@ -124,7 +124,7 @@ func (r *paymentFulfillmentAffiliateRepoStub) SetAffiliateAuthorized(context.Con
 	panic("unexpected SetAffiliateAuthorized call")
 }
 
-func (r *paymentFulfillmentAffiliateRepoStub) RecordAffiliateVisit(context.Context, AffiliateVisitInput) (bool, error) {
+func (r *paymentFulfillmentAffiliateRepoStub) RecordAffiliateVisit(context.Context, AffiliateVisitInput) (int64, bool, error) {
 	panic("unexpected RecordAffiliateVisit call")
 }
 

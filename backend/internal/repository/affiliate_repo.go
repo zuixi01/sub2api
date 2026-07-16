@@ -76,19 +76,29 @@ func (r *affiliateRepository) GetAffiliateByCode(ctx context.Context, code strin
 	return queryAffiliateByCode(ctx, client, code)
 }
 
-func (r *affiliateRepository) RecordAffiliateVisit(ctx context.Context, input service.AffiliateVisitInput) (bool, error) {
+func (r *affiliateRepository) RecordAffiliateVisit(ctx context.Context, input service.AffiliateVisitInput) (int64, bool, error) {
 	client := clientFromContext(ctx, r.client)
-	result, err := client.ExecContext(ctx, `
+	rows, err := client.QueryContext(ctx, `
 INSERT INTO affiliate_visit_events (affiliate_user_id, aff_code, visited_on, visitor_hash, utm_source, utm_medium, utm_campaign)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (affiliate_user_id, visited_on, visitor_hash) DO NOTHING`,
+ON CONFLICT (affiliate_user_id, visited_on, visitor_hash)
+DO UPDATE SET aff_code = affiliate_visit_events.aff_code
+RETURNING id, (xmax = 0) AS inserted`,
 		input.AffiliateUserID, input.AffCode, input.VisitedOn.UTC().Truncate(24*time.Hour), input.VisitorHash,
 		input.UTMSource, input.UTMMedium, input.UTMCampaign)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
-	affected, err := result.RowsAffected()
-	return affected > 0, err
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return 0, false, rows.Err()
+	}
+	var visitID int64
+	var inserted bool
+	if err := rows.Scan(&visitID, &inserted); err != nil {
+		return 0, false, err
+	}
+	return visitID, inserted, rows.Err()
 }
 
 func (r *affiliateRepository) GetAffiliateGrowthMetrics(ctx context.Context, affiliateUserID int64) (service.AffiliateGrowthMetrics, error) {
@@ -97,13 +107,20 @@ func (r *affiliateRepository) GetAffiliateGrowthMetrics(ctx context.Context, aff
 	rows, err := client.QueryContext(ctx, `
 SELECT
   (SELECT COUNT(*) FROM affiliate_visit_events WHERE affiliate_user_id = $1),
-  (SELECT COUNT(*) FROM user_affiliates WHERE inviter_id = $1),
-  (SELECT COUNT(DISTINCT source_user_id) FROM user_affiliate_ledger WHERE user_id = $1 AND action = 'accrue'),
+  (SELECT COUNT(*) FROM affiliate_visit_events WHERE affiliate_user_id = $1 AND registered_user_id IS NOT NULL),
+  (SELECT COUNT(DISTINCT ual.source_user_id)
+    FROM user_affiliate_ledger ual
+    JOIN affiliate_visit_events ave ON ave.registered_user_id = ual.source_user_id AND ave.affiliate_user_id = $1
+    WHERE ual.user_id = $1 AND ual.action = 'accrue'),
   COALESCE((SELECT SUM(po.pay_amount)::double precision
     FROM user_affiliate_ledger ual
     JOIN payment_orders po ON po.id = ual.source_order_id
+    JOIN affiliate_visit_events ave ON ave.registered_user_id = ual.source_user_id AND ave.affiliate_user_id = $1
     WHERE ual.user_id = $1 AND ual.action = 'accrue'), 0),
-  COALESCE((SELECT SUM(amount)::double precision FROM user_affiliate_ledger WHERE user_id = $1 AND action = 'accrue'), 0)`,
+  COALESCE((SELECT SUM(ual.amount)::double precision
+    FROM user_affiliate_ledger ual
+    JOIN affiliate_visit_events ave ON ave.registered_user_id = ual.source_user_id AND ave.affiliate_user_id = $1
+    WHERE ual.user_id = $1 AND ual.action = 'accrue'), 0)`,
 		affiliateUserID,
 	)
 	if err != nil {
@@ -262,6 +279,22 @@ func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID
 			inviterID,
 		); err != nil {
 			return fmt.Errorf("increment inviter aff_count: %w", err)
+		}
+		if attribution, ok := service.AffiliateAttributionFromContext(txCtx); ok {
+			if _, err = txClient.ExecContext(txCtx, `
+UPDATE affiliate_visit_events
+SET registered_user_id = $1,
+    registered_at = NOW()
+WHERE id = $2
+  AND affiliate_user_id = $3
+  AND aff_code = $4
+  AND registered_user_id IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM affiliate_visit_events existing
+      WHERE existing.registered_user_id = $1
+  )`, userID, attribution.VisitID, inviterID, attribution.AffCode); err != nil {
+				return fmt.Errorf("link affiliate visit attribution: %w", err)
+			}
 		}
 		bound = true
 		return nil

@@ -20,3 +20,16 @@ func TestAffiliateGrowthMigrationCreatesPrivacySafeVisitEvents(t *testing.T) {
 	require.NotContains(t, strings.ToLower(sql), "ip_address")
 	require.NotContains(t, strings.ToLower(sql), "user_agent")
 }
+
+func TestAffiliateVerifiedAttributionMigrationLinksRegistrationWithoutRawIdentifiers(t *testing.T) {
+	content, err := FS.ReadFile("180_affiliate_verified_attribution.sql")
+	require.NoError(t, err)
+
+	sql := strings.Join(strings.Fields(string(content)), " ")
+	require.Contains(t, sql, "registered_user_id BIGINT")
+	require.Contains(t, sql, "REFERENCES users(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "registered_at TIMESTAMPTZ")
+	require.Contains(t, sql, "UNIQUE INDEX")
+	require.NotContains(t, strings.ToLower(sql), "ip_address")
+	require.NotContains(t, strings.ToLower(sql), "user_agent")
+}

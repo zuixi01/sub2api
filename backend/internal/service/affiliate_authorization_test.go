@@ -63,9 +63,9 @@ func (r *affiliateAuthorizationRepoStub) SetAffiliateAuthorized(_ context.Contex
 	return nil
 }
 
-func (r *affiliateAuthorizationRepoStub) RecordAffiliateVisit(context.Context, AffiliateVisitInput) (bool, error) {
+func (r *affiliateAuthorizationRepoStub) RecordAffiliateVisit(context.Context, AffiliateVisitInput) (int64, bool, error) {
 	r.visitCalls++
-	return true, nil
+	return 1, true, nil
 }
 
 func (r *affiliateAuthorizationRepoStub) GetAffiliateGrowthMetrics(context.Context, int64) (AffiliateGrowthMetrics, error) {
@@ -160,7 +160,7 @@ func TestRecordAffiliateVisitRequiresAuthorizedAffiliate(t *testing.T) {
 	svc := newAffiliateAuthorizationService(repo)
 	input := AffiliateVisitInput{AffCode: "INVITER", VisitedOn: time.Now(), VisitorHash: "a" + strings.Repeat("1", 63)}
 
-	recorded, err := svc.RecordAffiliateVisit(ctx, input)
+	_, recorded, err := svc.RecordAffiliateVisit(ctx, input)
 	if !errors.Is(err, ErrAffiliateCodeInvalid) {
 		t.Fatalf("unauthorized affiliate must reject visit, got %v", err)
 	}
@@ -169,7 +169,7 @@ func TestRecordAffiliateVisitRequiresAuthorizedAffiliate(t *testing.T) {
 	}
 
 	repo.authorized[affiliateID] = true
-	recorded, err = svc.RecordAffiliateVisit(ctx, input)
+	_, recorded, err = svc.RecordAffiliateVisit(ctx, input)
 	if err != nil || !recorded || repo.visitCalls != 1 {
 		t.Fatalf("authorized affiliate visit must be recorded, recorded=%v err=%v calls=%d", recorded, err, repo.visitCalls)
 	}
